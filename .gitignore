@@ -1,0 +1,6 @@
+venv/
+*.task
+*.mp4
+*.avi
+data/
+__pycache__/

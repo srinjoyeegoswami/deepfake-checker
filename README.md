@@ -127,6 +127,8 @@ Subject 7 demonstrates a fundamental limitation of single-region rPPG: when an e
 
 Phase 3 addresses this by extracting pulse signals across multiple facial sub-regions (forehead, left cheek, right cheek) and measuring cross-spectral coherence.
 
+---
+
 ## Spectral Power Distribution & Failure-Mode Analysis
 
 To ground the observed benchmark discrepancies in empirical data rather than speculative assumptions, we extracted and plotted the normalized Fast Fourier Transform (FFT) power spectra of both the raw Green channel and the POS projection for Subjects 3, 4, and 7. Each spectrum is evaluated against the physiological passband ($42\text{--}180\text{ BPM}$) with a ground-truth cardiac marker derived from continuous contact pulse oximetry.
@@ -155,8 +157,33 @@ To ground the observed benchmark discrepancies in empirical data rather than spe
 
 ---
 
+## Real-World Validation: Self-Recorded Webcam Benchmark ($N = 3$)
+
+To test generalizability beyond public benchmark datasets, the rPPG pipeline (`pipeline.py`) was evaluated on personal webcam recordings under natural indoor conditions (ambient fluorescent lighting, standard laptop sensor, 30 FPS, $N = 3$ conditions, one clip per condition). Reference ground truth heart rates were obtained via simultaneous contact radial pulse counts.
+
+| Scenario | Ground Truth (BPM) | Green Est. (BPM) | Green Error (BPM) | POS Est. (BPM) | POS Error (BPM) | Observed Dynamics & Failure Analysis |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **1. Stationary Baseline** (`self_stationary.mp4`) | **73.5** | 70.9 | **2.6** | 74.8 | **1.3** | High SNR baseline; stable frontal pose. Pipeline transfers directly to unseen consumer webcam hardware without retuning. |
+| **2. Controlled Rigid Motion** (`self_motion.mp4`) | **76.0** | 50.0 | **26.0** | 65.3 | **10.7** | Pitch/yaw head rotation shifts illumination. Green collapses to a 50.0 BPM artifact; POS suppresses luminance noise, cutting error by >58%. |
+| **3. Post-Exertion / Elevated** (`self_exercise.mp4`) | **143.0** | 44.0 | **99.0** | 71.0 | **72.0** | **Failure case across both methods.** Heavy post-exercise breathing and motion corrupted the signal; the POS estimate peaked near half the true rate ($71.0\text{ BPM}$ vs. $143.0\text{ BPM}$). |
+
+---
+
+## Post-Exercise Diagnostic Analysis (`self_exercise.mp4`)
+
+To investigate the breakdown in Scenario 3, we computed time-windowed estimates (10-second sliding windows, 2-second hop) and inspected the whole-clip Fourier spectrum against raw filtered oscillations.
+
+![Post-Exercise Diagnostic](diagnose_post_exercise.png)
+
+### Diagnostic Findings:
+1. **Absence of Cardiac Peak in Fourier Spectrum:** At the measured reference rate of **143.0 BPM**, spectral power sits in a local trough with zero discernible peak energy. Instead, POS produced its global maximum peak at **71.0 BPM**, closely aligning with half the ground truth ($143 / 2 = 71.5\text{ BPM}$).
+2. **Physiological Non-Stationarity:** The windowed time-series analysis reveals that the subject's heart rate was not static; it briefly hit ~138 BPM near the 19-second mark before steadily declining toward 70–80 BPM during recovery. Attempting to fit a single constant ground truth across a >50-second recovery recording blurs and broadens the Fourier spectrum.
+3. **Motion and Respiration Bursts:** The filtered time-domain waveform displays severe amplitude surges (>0.10 relative to baseline fluctuations of ~0.03) between 23–27s and 38–48s, confirming that heavy breathing and postural shifts introduced dominant low-frequency artifacts that obscured the underlying pulse.
+
+---
+
 ### Architectural Takeaway: Motivation for Phase 3 (Multi-Region Coherence)
 
-The breakdown of Subject 7 reveals a fundamental boundary condition of single-ROI rPPG: **analyzing a single skin patch cannot differentiate between true cardiovascular pulsatile flow and environmental light interference.**
+The breakdown of Subject 7 and real-world post-exercise testing reveal a fundamental boundary condition of single-ROI rPPG: **analyzing a single skin patch cannot differentiate between true cardiovascular pulsatile flow and environmental light interference or gross physical motion.**
 
 Authentic physiological perfusion propagates through the facial vascular tree with distinct, stable phase and frequency coupling across separate anatomical zones. In **Phase 3**, we extend the pipeline to extract synchronized signals from three distinct regions of interest—the **forehead**, **left cheek**, and **right cheek**—and evaluate **cross-spectral coherence**. This multi-region biological consistency forms the core physiological feature representation used to distinguish authentic human recordings from synthetic deepfakes.

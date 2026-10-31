@@ -1,14 +1,9 @@
-venv/
-*.task
-*.mp4
-*.avi
-data/
-__pycache__/
+﻿venv/
 data/
 cache/
+*.avi
 *.mp4
 *.npz
 *.task
-venv/
 __pycache__/
 *.pyc

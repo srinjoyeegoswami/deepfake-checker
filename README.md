@@ -1,6 +1,29 @@
 # Pulse-Based Deepfake Detection
 
 Detecting synthetic and manipulated video frames by extracting subtle remote photoplethysmography (rPPG) blood volume pulse signals.
+
+---
+
+---
+
+# Phase 1: Physiological Signal Validation & rPPG Benchmark
+
+A computer vision and physiological signal-processing pipeline that extracts blood volume pulse (BVP) signals from facial video. This phase establishes the biological ground truth, validating cardiac pulse extraction across real human subjects and benchmarking single-channel intensity tracking against multi-channel color-space projections under motion corruption.
+
+---
+
+## Evaluation Metric
+
+Performance across test subjects is quantified using **Mean Absolute Error (MAE)**, defined as the average absolute deviation between algorithm estimates and ground-truth pulse oximeter measurements:
+
+$$\text{MAE} = \frac{1}{N} \sum_{i=1}^{N} |\text{Estimated}_i - \text{True}_i|$$
+
+For our initial baseline of $N = 3$ subjects:
+
+$$\text{MAE}_{\text{Green}} = \frac{|\text{Err}_1| + |\text{Err}_2| + |\text{Err}_3|}{3} \approx 6.43\text{ BPM}$$
+
+$$\text{MAE}_{\text{POS}} = \frac{|\text{Err}_1| + |\text{Err}_2| + |\text{Err}_3|}{3} \approx 1.53\text{ BPM}$$
+
 ---
 
 # Remote Photoplethysmography (rPPG) & Temporal Deepfake Detection

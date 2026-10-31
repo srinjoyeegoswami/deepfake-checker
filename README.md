@@ -4,8 +4,6 @@ Detecting synthetic and manipulated video frames by extracting subtle remote pho
 
 ---
 
----
-
 # Phase 1: Physiological Signal Validation & rPPG Benchmark
 
 A computer vision and physiological signal-processing pipeline that extracts blood volume pulse (BVP) signals from facial video. This phase establishes the biological ground truth, validating cardiac pulse extraction across real human subjects and benchmarking single-channel intensity tracking against multi-channel color-space projections under motion corruption.
@@ -23,12 +21,6 @@ For our initial baseline of $N = 3$ subjects:
 $$\text{MAE}_{\text{Green}} = \frac{|\text{Err}_1| + |\text{Err}_2| + |\text{Err}_3|}{3} \approx 6.43\text{ BPM}$$
 
 $$\text{MAE}_{\text{POS}} = \frac{|\text{Err}_1| + |\text{Err}_2| + |\text{Err}_3|}{3} \approx 1.53\text{ BPM}$$
-
----
-
-# Remote Photoplethysmography (rPPG) & Temporal Deepfake Detection
-
-A computer vision and physiological signal-processing pipeline that extracts blood volume pulse (BVP) signals from facial video. The project validates cardiac pulse extraction across real subjects and benchmarks single-channel intensity tracking against multi-channel color-space projections under motion corruption.
 
 ---
 
@@ -66,8 +58,6 @@ Single-channel intensity approaches assume all periodic luminance shifts stem fr
 2. **Forehead Skin ROI:** Skin regions are masked using upper forehead landmarks (`TOP = [67, 109, 10, 338, 297]`) trimmed 15% inwards from temple edges and stopping 40% short of the eyebrows (`BROW = [105, 334]`) to prevent hairline and eyelid contamination.
 3. **Temporal Filtering:** Detrending eliminates slow baseline drift (lighting changes, camera auto-exposure), followed by a 3rd-order Butterworth bandpass filter ($0.7\text{--}3.0\text{ Hz}$, corresponding to $42\text{--}180\text{ BPM}$).
 4. **Spectral Estimation:** Fast Fourier Transform (FFT) identifies the maximum energy frequency bin within the biological cardiac band.
-
----
 
 ---
 
@@ -182,8 +172,88 @@ To investigate the breakdown in Scenario 3, we computed time-windowed estimates 
 
 ---
 
-### Architectural Takeaway: Motivation for Phase 3 (Multi-Region Coherence)
+## Limitations & Operational Boundaries
 
-The breakdown of Subject 7 and real-world post-exercise testing reveal a fundamental boundary condition of single-ROI rPPG: **analyzing a single skin patch cannot differentiate between true cardiovascular pulsatile flow and environmental light interference or gross physical motion.**
+1. **Physical Motion:** Rigid and non-rigid head rotation (pitch, yaw, tilt) causes surface illumination shifts. While POS dampens linear specular noise compared to single-channel Green, multi-axis head motion still degrades pulse recovery on single-region setups.
+2. **Ambient Illumination Fluctuations:** Common-mode lighting shifts across all RGB channels (e.g., room lighting flicker, auto-exposure adjustments) cannot be canceled by color-space differencing alone.
+3. **Non-Stationary Heart Rates:** Single-window Fourier spectral estimation assumes stationary frequency over time. Rapid physiological deceleration or acceleration smears spectral energy across bins.
+4. **Post-Exertion / Exercise:** The pipeline is not validated for post-exercise scenarios; heavy thoracic respiration, periodic panting, and postural sway introduce dominant movement artifacts that swamp the subtle cardiovascular signal.
 
-Authentic physiological perfusion propagates through the facial vascular tree with distinct, stable phase and frequency coupling across separate anatomical zones. In **Phase 3**, we extend the pipeline to extract synchronized signals from three distinct regions of interest—the **forehead**, **left cheek**, and **right cheek**—and evaluate **cross-spectral coherence**. This multi-region biological consistency forms the core physiological feature representation used to distinguish authentic human recordings from synthetic deepfakes.
+---
+
+# Phase 3: Transition to In-the-Wild Video & The Codec Noise Floor (DFDC)
+
+In Phase 3, we evaluated whether remote photoplethysmography scales to unconstrained, compressed web video as a viable feature for deepfake detection. Using the **Deepfake Detection Challenge (DFDC)** dataset, we tested the core hypothesis of biological detectors: *synthetic facial manipulation disrupts physiological cardiovascular signals, producing measurable pulse attenuation or absence in deepfakes.*
+
+---
+
+## 1. Dataset Characteristics & Identity Leakage Prevention
+
+The evaluated DFDC sample comprises 400 video sequences exhibiting substantial class imbalance:
+* **Total Clips:** 400
+* **FAKE Clips:** 323 (~80.75%)
+* **REAL Clips:** 77 (~19.25%)
+* **Unique Originals:** 209 (58 fakes share an original within the 77-real subset; the remaining derive from the wider DFDC pool)
+
+To prevent data leakage during evaluation, we mapped every video to its source actor/clip, establishing **244 independent source groups**. All subsequent cross-validation splits use `GroupKFold` across these 244 groups, guaranteeing that no synthesized video shares a fold with its original real counterpart.
+
+---
+
+## 2. Real-World Engineering Challenge: Small Face Mesh Failure
+
+When applying standard full-frame MediaPipe landmark detection across DFDC videos, extraction failed on **>50% of clips**. 
+
+### Root Cause Analysis:
+* DFDC subjects stand at variable distances from the camera in unconstrained 1080p frames, causing facial bounding boxes to shrink to **$90\text{--}120\text{ px}$**.
+* Full-frame downsampling in the detector causes small, tilted, or non-centered faces to drop below detection confidence thresholds.
+
+### Architectural Solution (`extract_rgb_crop`):
+1. **Dynamic Tile-Search:** A multi-scale sliding tile search discovers small faces across the 1080p canvas.
+2. **Localized Bounding-Box Cropping:** Once located, the face region is cropped, upscaled, and tracked frame-to-frame.
+3. **Temporal Gap-Filling:** Linear interpolation bridges momentary tracking dropouts (<5 frames).
+
+This engineering intervention restored valid forehead skin ROI tracks across all evaluated sample clips ($100\%$ retrieval on $n = 40$).
+
+---
+
+## 3. Pulse Calibration & The In-Frame Background Control Experiment
+
+To determine whether pulse signals survive heavy H.264 spatial macroblock compression, we evaluated the **Peak Power Ratio** within the physiological band ($0.7\text{--}3.0\text{ Hz}$):
+
+$$\text{Peak Ratio} = \frac{\max_{f \in [0.7, 3.0]} |X(f)|^2}{\sum_{f \in [0.7, 3.0]} |X(f)|^2}$$
+
+A distinct, observable cardiac pulse typically yields peak ratios of **$0.40\text{--}0.60+$**. We benchmarked DFDC forehead skin against synthetic white noise, uncompressed ground truth (UBFC), and an in-frame **non-skin background control patch** (a $40\times 40\text{ px}$ inert region from the upper-left background of each video):
+
+| Signal Source | Video Quality / Dataset | Extraction Method | Mean Peak Ratio | 5th–95th Percentile |
+| :--- | :--- | :--- | :---: | :---: |
+| **UBFC Forehead** | Uncompressed RGB (webcam) | POS ($n = 3$, 10s windows) | **0.498** | 0.448 – 0.557 |
+| **DFDC Background Control** | H.264 Compressed (DFDC) | Inert In-Frame Patch ($n = 40$) | **0.200** | 0.102 – 0.369 |
+| **DFDC Forehead (Skin)** | H.264 Compressed (DFDC) | Crop-Based POS ($n = 40$) | **0.201** | 0.103 – 0.438 |
+| **Synthetic White Noise** | Algorithmic Simulation | Uniform Gaussian ($N = 500$) | **0.169** | 0.111 – 0.251 |
+
+---
+
+## 4. Empirical Findings & Paired Statistical Test ($n = 40$)
+
+To eliminate clip-to-clip lighting and codec variances, we conducted a paired difference test ($\Delta = \text{Ratio}_{\text{Forehead}} - \text{Ratio}_{\text{Background}}$) across 40 identical clips (20 REAL, 20 FAKE):
+
+| Metric | Mean | Std | Min | 25% | 50% (Median) | 75% | Max |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Forehead Ratio** | 0.2007 | 0.0652 | 0.1029 | 0.1658 | 0.1859 | 0.2144 | 0.4380 |
+| **Background Ratio** | 0.2002 | 0.0594 | 0.1022 | 0.1622 | 0.1861 | 0.2309 | 0.3693 |
+| **Difference ($\Delta$)** | +0.0005 | 0.0939 | -0.2295 | -0.0577 | -0.0205 | 0.0577 | 0.3074 |
+
+---
+
+### Critical Empirical Observations:
+1. **The Realistic Video Noise Floor:** The background control patch yielded a mean peak ratio of **0.200**, establishing that H.264 compression artifacts, sensor noise, and subtle illumination fluctuations create an empirical noise floor at $\sim 0.20$—significantly more peaked than idealized white noise ($0.169$).
+2. **Absence of Biological Separation:** The forehead skin patch produced a mean ratio of **0.201** (median **0.186**), matching the inert background control patch (**0.200**, median **0.186**) down to the third decimal place. The mean paired difference is **$+0.0005$** (paired $t$-test $p > 0.05$).
+3. **Class Indistinguishability:** In our initial single-region check, FAKE clips averaged a ratio of **0.168** while REAL clips averaged **0.187**, both hovering inside the codec noise floor. FFT peak frequencies clustered tightly around discrete frame-rate harmonic bins (47.95 BPM and 59.94 BPM) rather than physiological variation.
+
+---
+
+## 5. Conclusions & Implications for Deepfake Detection
+
+1. **Limits of Single-Region rPPG under Compression:** On heavily compressed, in-the-wild web video (such as DFDC), single-ROI pulse energy is buried under the H.264 codec noise floor. Any binary classifier trained solely on single-region pulse energy under these conditions measures compression macroblock artifacts rather than genuine cardiovascular perfusion.
+2. **Validating Biological Priors via Controls:** Establishing the inert background patch control was crucial; without it, an average ratio of ~0.20 could easily be misinterpreted as a faint, recoverable physiological pulse rather than video compression noise.
+3. **Future Trajectory:** While single-region pulse energy collapses under aggressive compression, biological consistency across facial regions remains an open avenue. Multi-region spatial phase coherence (cross-correlating blood volume pulse dynamics between forehead and bilateral cheek vascular beds) provides the necessary structural constraint for high-bitrate benchmarks (e.g., FaceForensics++ c0/c23, Celeb-DF).

@@ -4,3 +4,11 @@ venv/
 *.avi
 data/
 __pycache__/
+data/
+cache/
+*.mp4
+*.npz
+*.task
+venv/
+__pycache__/
+*.pyc
